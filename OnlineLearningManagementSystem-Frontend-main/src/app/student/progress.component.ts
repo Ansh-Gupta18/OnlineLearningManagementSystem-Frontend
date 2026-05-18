@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { ApiService } from '../services/api.service';
+import { API_BASE, ApiService } from '../services/api.service';
 import { AuthService } from '../services/auth.service';
 
 interface CourseProgress {
@@ -141,8 +141,10 @@ export class StudentProgressComponent implements OnInit {
         const certList = Array.isArray(res.certificates?.data) ? res.certificates.data : (Array.isArray(res.certificates) ? res.certificates : []);
         const progressRecords = Array.isArray(res.allRecords?.data) ? res.allRecords.data : (Array.isArray(res.allRecords) ? res.allRecords : []);
 
+        const completedCourses = enrollList.filter((e: any) => this.isCourseCompleted(e)).length;
+
         // Update stats
-        this.coursesInProgress.set(enrollList.filter((e: any) => e.status === 'ACTIVE').length);
+        this.coursesInProgress.set(Math.max(enrollList.length - completedCourses, 0));
         this.certificatesCount.set(certList.length);
         this.certificates.set(certList);
         
@@ -155,28 +157,37 @@ export class StudentProgressComponent implements OnInit {
         this.totalCompletedLessons.set(lessonCount);
 
         // Process Hybrid View
-        this.processHybridProgress(uid, enrollList, certList);
+        this.processHybridProgress(uid, enrollList, certList, progressRecords);
       },
       error: () => this.loading.set(false)
     });
   }
 
-  private processHybridProgress(uid: number, enrollments: any[], certs: any[]) {
+  private processHybridProgress(uid: number, enrollments: any[], certs: any[], progressRecords: any[]) {
     if (enrollments.length === 0) {
       this.loading.set(false);
       return;
     }
 
     const certCourseIds = new Set(certs.map(c => c.courseId));
-    const courseRequests = enrollments.map(e => 
-      this.api.getCourseById(e.courseId).pipe(catchError(() => of({ data: { title: 'Course #' + e.courseId } })))
+    const courseRequests = enrollments.map(e =>
+      forkJoin({
+        course: this.api.getCourseById(e.courseId).pipe(catchError(() => of({ data: { title: 'Course #' + e.courseId } }))),
+        progress: this.api.getCourseProgress(uid, e.courseId).pipe(catchError(() => of(e.progressPercent ?? 0))),
+        lessonCount: this.api.getLessonCount(e.courseId).pipe(catchError(() => of(0))),
+      })
     );
 
     forkJoin(courseRequests).subscribe({
       next: (results: any[]) => {
         const cpList: CourseProgress[] = enrollments.map((e, index) => {
-          const courseDetails = results[index]?.data || results[index];
-          const pct = e.progressPercent || 0;
+          const courseDetails = results[index]?.course?.data || results[index]?.course;
+          const totalLessons = this.responseNumber(results[index]?.lessonCount);
+          const completedLessons = progressRecords.filter((record: any) =>
+            Number(record.courseId) === Number(e.courseId) && this.isLessonCompleted(record)
+          ).length;
+          const recordPercent = totalLessons > 0 ? Math.round((completedLessons * 100) / totalLessons) : 0;
+          const pct = this.bestPercent(results[index]?.progress, e.progressPercent, recordPercent);
 
           // Background auto-issuance
           if (pct >= 100 && !certCourseIds.has(e.courseId)) {
@@ -199,7 +210,7 @@ export class StudentProgressComponent implements OnInit {
             courseId: e.courseId,
             title: courseDetails?.title || 'Course #' + e.courseId,
             percentage: Math.round(pct),
-            completedLessons: 0 // Stat only
+            completedLessons
           };
         });
 
@@ -210,9 +221,52 @@ export class StudentProgressComponent implements OnInit {
     });
   }
 
+  private isCourseCompleted(enrollment: any): boolean {
+    return enrollment?.status === 'COMPLETED' || Number(enrollment?.progressPercent ?? 0) >= 100 || !!enrollment?.completedAt;
+  }
+
+  private isLessonCompleted(record: any): boolean {
+    return record?.isCompleted === true || record?.isCompleted === 1 || String(record?.isCompleted) === 'true';
+  }
+
+  private normalizePercent(raw: any, fallback = 0): number {
+    const value = typeof raw === 'number' ? raw : (raw?.data ?? raw?.progressPercentage ?? raw?.courseProgress ?? fallback);
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : 0;
+  }
+
+  private bestPercent(raw: any, enrollmentFallback = 0, recordFallback = 0): number {
+    return Math.max(
+      this.normalizePercent(raw, enrollmentFallback),
+      this.normalizePercent(enrollmentFallback),
+      this.normalizePercent(recordFallback)
+    );
+  }
+
+  private responseNumber(raw: any): number {
+    const value = typeof raw === 'number' ? raw : (raw?.data ?? raw?.count ?? raw);
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }
+
   protected downloadCert(cert: any) {
     if (!cert.certificateUrl) return;
-    const url = cert.certificateUrl.startsWith('http') ? cert.certificateUrl : `http://localhost:8080${cert.certificateUrl}`;
+    const url = this.certificateDownloadUrl(cert.certificateUrl);
     window.open(url, '_blank');
+  }
+
+  private certificateDownloadUrl(certificateUrl: string): string {
+    if (certificateUrl.startsWith('http')) {
+      return certificateUrl;
+    }
+
+    const normalizedUrl = certificateUrl.replace(/\\/g, '/');
+    const fileName = normalizedUrl.split('/').pop();
+
+    if (normalizedUrl.includes('certificates/') && fileName) {
+      return `${API_BASE.PROGRESS}/api/v1/progress/certificates/download/${fileName}`;
+    }
+
+    return `${API_BASE.PROGRESS}${normalizedUrl.startsWith('/') ? '' : '/'}${normalizedUrl}`;
   }
 }

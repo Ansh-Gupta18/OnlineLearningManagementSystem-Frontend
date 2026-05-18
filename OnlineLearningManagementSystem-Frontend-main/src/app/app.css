@@ -12,6 +12,6 @@
 	overflow-x: hidden;
 	overflow-y: auto;
 	position: relative;
-	background: #f8fafc;
+	background: var(--bg-deep);
 	color: var(--text-primary);
 }

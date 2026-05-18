@@ -160,24 +160,31 @@ export class StudentDashboardComponent implements OnInit {
 
         // Get first 3 ACTIVE enrollments for "Continue Learning"
         const activeEnrollments = enrollmentList
-          .filter((e: any) => e.status === 'ACTIVE')
+          .filter((e: any) => !this.isCourseCompleted(e))
           .slice(0, 3);
 
         if (activeEnrollments.length > 0) {
-          const courseRequests = activeEnrollments.map((e: any) => 
-            this.api.getCourseById(e.courseId).pipe(
+          const courseRequests = activeEnrollments.map((e: any) => forkJoin({
+            course: this.api.getCourseById(e.courseId).pipe(
               catchError(() => of({ data: { title: `Course #${e.courseId}`, category: 'Course' } }))
-            )
-          );
+            ),
+            progress: this.api.getCourseProgress(uid, e.courseId).pipe(catchError(() => of(e.progressPercent ?? 0))),
+            lessonCount: this.api.getLessonCount(e.courseId).pipe(catchError(() => of(0))),
+          }));
           forkJoin(courseRequests).subscribe({
             next: (courseResults: any) => {
               const combined = activeEnrollments.map((enrollment: any, index: number) => {
-                const courseData = courseResults[index]?.data || courseResults[index] || {};
+                const courseData = courseResults[index]?.course?.data || courseResults[index]?.course || {};
+                const totalLessons = this.responseNumber(courseResults[index]?.lessonCount);
+                const completedLessons = progressRecords.filter((record: any) =>
+                  Number(record.courseId) === Number(enrollment.courseId) && this.isLessonCompleted(record)
+                ).length;
+                const recordPercent = totalLessons > 0 ? Math.round((completedLessons * 100) / totalLessons) : 0;
                 return {
                   courseId: enrollment.courseId,
                   title: courseData.title || `Course #${enrollment.courseId}`,
                   category: courseData.category || '',
-                  progressPercent: enrollment.progressPercent || 0,
+                  progressPercent: this.bestPercent(courseResults[index]?.progress, enrollment.progressPercent, recordPercent),
                 };
               });
               this.inProgress.set(combined);
@@ -193,5 +200,33 @@ export class StudentDashboardComponent implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  private isCourseCompleted(enrollment: any): boolean {
+    return enrollment?.status === 'COMPLETED' || Number(enrollment?.progressPercent ?? 0) >= 100 || !!enrollment?.completedAt;
+  }
+
+  private normalizePercent(raw: any, fallback = 0): number {
+    const value = typeof raw === 'number' ? raw : (raw?.data ?? raw?.progressPercentage ?? raw?.courseProgress ?? fallback);
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : 0;
+  }
+
+  private bestPercent(raw: any, enrollmentFallback = 0, recordFallback = 0): number {
+    return Math.max(
+      this.normalizePercent(raw, enrollmentFallback),
+      this.normalizePercent(enrollmentFallback),
+      this.normalizePercent(recordFallback)
+    );
+  }
+
+  private isLessonCompleted(record: any): boolean {
+    return record?.isCompleted === true || record?.isCompleted === 1 || String(record?.isCompleted) === 'true';
+  }
+
+  private responseNumber(raw: any): number {
+    const value = typeof raw === 'number' ? raw : (raw?.data ?? raw?.count ?? raw);
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
   }
 }

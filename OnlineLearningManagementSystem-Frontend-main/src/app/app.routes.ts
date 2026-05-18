@@ -14,6 +14,7 @@ import { StudentCertificatesComponent } from './student/certificates.component';
 import { StudentDashboardComponent } from './student/dashboard.component';
 import { StudentExploreComponent } from './student/explore.component';
 import { StudentMyCoursesComponent } from './student/my-courses.component';
+import { StudentNotificationsComponent } from './student/notifications.component';
 import { StudentProfileComponent } from './student/profile.component';
 import { StudentProgressComponent } from './student/progress.component';
 
@@ -21,6 +22,7 @@ import { StudentProgressComponent } from './student/progress.component';
 import { InstructorCreateCourseComponent } from './instructor/create-course.component';
 import { InstructorDashboardComponent } from './instructor/dashboard.component';
 import { InstructorMyCoursesComponent } from './instructor/my-courses.component';
+import { InstructorNotificationsComponent } from './instructor/notifications.component';
 import { InstructorProfileComponent } from './instructor/profile.component';
 import { InstructorStudentsComponent } from './instructor/students.component';
 
@@ -30,6 +32,7 @@ import { AdminCoursesComponent } from './admin/courses.component';
 import { AdminUsersComponent } from './admin/users.component';
 import { AdminApproveCoursesComponent } from './admin/approve-courses.component';
 import { AdminAnalyticsComponent } from './admin/analytics.component';
+import { AdminNotificationsComponent } from './admin/notifications.component';
 
 // Shared
 import { DiscussionComponent } from './shared/discussion.component';
@@ -59,6 +62,7 @@ export const routes: Routes = [
       { path: 'profile', component: StudentProfileComponent },
       { path: 'discussion', component: DiscussionComponent },
       { path: 'progress', component: StudentProgressComponent },
+      { path: 'notifications', component: StudentNotificationsComponent },
     ],
   },
 
@@ -75,6 +79,7 @@ export const routes: Routes = [
       { path: 'students', component: InstructorStudentsComponent },
       { path: 'discussion', component: DiscussionComponent },
       { path: 'profile', component: InstructorProfileComponent },
+      { path: 'notifications', component: InstructorNotificationsComponent },
     ],
   },
 
@@ -90,6 +95,7 @@ export const routes: Routes = [
       { path: 'users', component: AdminUsersComponent },
       { path: 'approve-courses', component: AdminApproveCoursesComponent },
       { path: 'analytics', component: AdminAnalyticsComponent },
+      { path: 'notifications', component: AdminNotificationsComponent },
     ],
   },
 

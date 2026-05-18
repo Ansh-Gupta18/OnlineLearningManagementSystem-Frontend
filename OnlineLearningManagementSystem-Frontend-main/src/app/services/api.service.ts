@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 
@@ -275,13 +275,16 @@ export class ApiService {
 
   // NOTIFICATIONS
   getNotifications(userId: number): Observable<any> {
-    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/user/${userId}`, { headers: this.headers() });
+    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/user/${userId}`, { headers: this.headers() })
+      .pipe(map((res: any) => this.normalizeNotifications(res)));
   }
   getUnreadCount(userId: number): Observable<any> {
-    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/unread-count/${userId}`, { headers: this.headers() });
+    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/unread-count/${userId}`, { headers: this.headers() })
+      .pipe(map((res: any) => typeof res === 'number' ? res : (res?.data ?? 0)));
   }
   getUnreadNotifications(userId: number): Observable<any> {
-    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/unread/${userId}`, { headers: this.headers() });
+    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/unread/${userId}`, { headers: this.headers() })
+      .pipe(map((res: any) => this.normalizeNotifications(res)));
   }
   markNotificationRead(notificationId: number): Observable<any> {
     return this.http.put(`${API_BASE.NOTIFICATION}/api/v1/notifications/${notificationId}/read`, {}, { headers: this.headers() });
@@ -293,7 +296,19 @@ export class ApiService {
     return this.http.delete(`${API_BASE.NOTIFICATION}/api/v1/notifications/${notificationId}`, { headers: this.headers() });
   }
   getNotificationsByType(userId: number, type: string): Observable<any> {
-    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/type?userId=${userId}&type=${type}`, { headers: this.headers() });
+    return this.http.get(`${API_BASE.NOTIFICATION}/api/v1/notifications/type?userId=${userId}&type=${type}`, { headers: this.headers() })
+      .pipe(map((res: any) => this.normalizeNotifications(res)));
+  }
+
+  private normalizeNotifications(res: any): any[] {
+    const data = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+    return data.map((notification: any) => ({
+      ...notification,
+      notificationId: notification.notificationId ?? notification.id,
+      title: notification.title ?? notification.type ?? 'Notification',
+      message: notification.message ?? '',
+      read: notification.read ?? notification.isRead ?? false,
+    }));
   }
 
   // DISCUSSION

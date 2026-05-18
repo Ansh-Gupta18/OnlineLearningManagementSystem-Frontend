@@ -125,6 +125,7 @@ export const instructorNavItems: NavItem[] = [
   { label: 'My Courses', path: '/instructor/my-courses' },
   { label: 'Create Course', path: '/instructor/create-course' },
   { label: 'Students', path: '/instructor/students' },
+  { label: 'Notifications', path: '/instructor/notifications' },
   { label: 'Discussion', path: '/instructor/discussion' },
   { label: 'Profile', path: '/instructor/profile' },
 ];
@@ -135,6 +136,7 @@ export const studentNavItems: NavItem[] = [
   { label: 'Explore', path: '/student/explore' },
   { label: 'Certificates', path: '/student/certificates' },
   { label: 'Progress', path: '/student/progress' },
+  { label: 'Notifications', path: '/student/notifications' },
   { label: 'Discussion', path: '/student/discussion' },
   { label: 'Profile', path: '/student/profile' },
 ];
@@ -145,4 +147,5 @@ export const adminNavItems: NavItem[] = [
   { label: 'Approve Courses', path: '/admin/approve-courses' },
   { label: 'All Courses', path: '/admin/courses' },
   { label: 'Analytics', path: '/admin/analytics' },
+  { label: 'Notifications', path: '/admin/notifications' },
 ];

@@ -1,7 +1,7 @@
 import { Component, OnInit, signal, effect } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService } from '../services/api.service';
+import { API_BASE, ApiService } from '../services/api.service';
 import { AuthService } from '../services/auth.service';
 
 @Component({
@@ -160,15 +160,24 @@ export class StudentCertificatesComponent implements OnInit {
   protected downloadCert(cert: any) {
     if (!cert.certificateUrl) return;
 
-    const gatewayUrl = window.location.origin.includes('localhost')
-      ? 'http://localhost:8080'
-      : window.location.origin;
-
-    const fileName = cert.certificateUrl.split('/').pop();
-
-    const downloadUrl = `${gatewayUrl}/certificates/${fileName}`;
+    const downloadUrl = this.certificateDownloadUrl(cert.certificateUrl);
 
     window.open(downloadUrl, '_blank');
+  }
+
+  private certificateDownloadUrl(certificateUrl: string): string {
+    if (certificateUrl.startsWith('http')) {
+      return certificateUrl;
+    }
+
+    const normalizedUrl = certificateUrl.replace(/\\/g, '/');
+    const fileName = normalizedUrl.split('/').pop();
+
+    if (normalizedUrl.includes('certificates/') && fileName) {
+      return `${API_BASE.PROGRESS}/api/v1/progress/certificates/download/${fileName}`;
+    }
+
+    return `${API_BASE.PROGRESS}${normalizedUrl.startsWith('/') ? '' : '/'}${normalizedUrl}`;
   }
 
   protected copyCode(code: string) {

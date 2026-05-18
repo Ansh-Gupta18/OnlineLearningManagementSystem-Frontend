@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { ApiService } from '../services/api.service';
 import { AuthService } from '../services/auth.service';
 
@@ -84,13 +85,13 @@ export class StudentMyCoursesComponent implements OnInit {
     const filter = this.activeFilter();
     return this.enrolledCourses().filter((course) => {
       if (filter === 'All') return true;
-      if (filter === 'Completed') return course.status === 'COMPLETED';
-      return course.status === 'ACTIVE';
+      if (filter === 'Completed') return this.isCourseCompleted(course);
+      return !this.isCourseCompleted(course);
     });
   });
 
-  protected readonly activeCount = computed(() => this.enrolledCourses().filter((c: any) => c.status === 'ACTIVE').length);
-  protected readonly completedCount = computed(() => this.enrolledCourses().filter((c: any) => c.status === 'COMPLETED').length);
+  protected readonly completedCount = computed(() => this.enrolledCourses().filter((c: any) => this.isCourseCompleted(c)).length);
+  protected readonly activeCount = computed(() => Math.max(this.enrolledCourses().length - this.completedCount(), 0));
   protected readonly averageProgress = computed(() => {
     const courses = this.enrolledCourses();
     if (courses.length === 0) return 0;
@@ -99,28 +100,44 @@ export class StudentMyCoursesComponent implements OnInit {
 
   constructor(private api: ApiService, private auth: AuthService) {}
 
+  private isCourseCompleted(course: any): boolean {
+    return course?.status === 'COMPLETED' || Number(course?.progressPercent ?? 0) >= 100 || !!course?.completedAt;
+  }
+
   ngOnInit() {
     const uid = this.auth.userId();
     if (!uid) { this.loading.set(false); return; }
 
-    this.api.getEnrollmentsByStudent(uid).subscribe({
+    forkJoin({
+      enrollments: this.api.getEnrollmentsByStudent(uid).pipe(catchError(() => of({ data: [] }))),
+      progressRecords: this.api.getAllProgressByStudent(uid).pipe(catchError(() => of({ data: [] }))),
+    }).subscribe({
       next: (res: any) => {
-        const enrollments: any[] = res.data || res || [];
+        const enrollments: any[] = Array.isArray(res.enrollments?.data) ? res.enrollments.data : (Array.isArray(res.enrollments) ? res.enrollments : []);
+        const progressRecords: any[] = Array.isArray(res.progressRecords?.data) ? res.progressRecords.data : (Array.isArray(res.progressRecords) ? res.progressRecords : []);
         if (enrollments.length === 0) {
           this.loading.set(false);
           return;
         }
 
-        // Fetch course details for each enrollment in parallel
-        const courseRequests = enrollments.map((e: any) => this.api.getCourseById(e.courseId));
+        const courseRequests = enrollments.map((e: any) => forkJoin({
+          course: this.api.getCourseById(e.courseId).pipe(catchError(() => of({ data: { courseId: e.courseId, title: `Course #${e.courseId}` } }))),
+          progress: this.api.getCourseProgress(uid, e.courseId).pipe(catchError(() => of(e.progressPercent ?? 0))),
+          lessonCount: this.api.getLessonCount(e.courseId).pipe(catchError(() => of(0))),
+        }));
         forkJoin(courseRequests).subscribe({
           next: (courseResults: any) => {
             const combined = enrollments.map((enrollment: any, index: number) => {
-              const courseData = courseResults[index]?.data || courseResults[index] || {};
+              const courseData = courseResults[index]?.course?.data || courseResults[index]?.course || {};
+              const totalLessons = this.responseNumber(courseResults[index]?.lessonCount);
+              const completedLessons = progressRecords.filter((record: any) =>
+                Number(record.courseId) === Number(enrollment.courseId) && this.isLessonCompleted(record)
+              ).length;
+              const recordPercent = totalLessons > 0 ? Math.round((completedLessons * 100) / totalLessons) : 0;
               return {
                 ...courseData,
                 enrollmentId: enrollment.enrollmentId,
-                progressPercent: enrollment.progressPercent || 0,
+                progressPercent: this.bestPercent(courseResults[index]?.progress, enrollment.progressPercent, recordPercent),
                 status: enrollment.status || 'ACTIVE',
                 enrolledAt: enrollment.enrolledAt,
                 completedAt: enrollment.completedAt,
@@ -148,5 +165,29 @@ export class StudentMyCoursesComponent implements OnInit {
       },
       error: () => { this.loading.set(false); },
     });
+  }
+
+  private normalizePercent(raw: any, fallback = 0): number {
+    const value = typeof raw === 'number' ? raw : (raw?.data ?? raw?.progressPercentage ?? raw?.courseProgress ?? fallback);
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.max(0, Math.min(100, numeric)) : 0;
+  }
+
+  private bestPercent(raw: any, enrollmentFallback = 0, recordFallback = 0): number {
+    return Math.max(
+      this.normalizePercent(raw, enrollmentFallback),
+      this.normalizePercent(enrollmentFallback),
+      this.normalizePercent(recordFallback)
+    );
+  }
+
+  private isLessonCompleted(record: any): boolean {
+    return record?.isCompleted === true || record?.isCompleted === 1 || String(record?.isCompleted) === 'true';
+  }
+
+  private responseNumber(raw: any): number {
+    const value = typeof raw === 'number' ? raw : (raw?.data ?? raw?.count ?? raw);
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
   }
 }

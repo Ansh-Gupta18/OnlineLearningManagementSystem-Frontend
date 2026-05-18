@@ -1,49 +1,65 @@
-import { Component, inject, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, effect, inject, OnInit, OnDestroy, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter, Subscription } from 'rxjs';
 import { instructorNavItems, studentNavItems, adminNavItems, NavItem } from './app-data';
 import { AuthService } from '../services/auth.service';
 import { ApiService } from '../services/api.service';
 import { CommonModule } from '@angular/common';
+import { ThemeToggleComponent } from './theme-toggle.component';
 
 @Component({
   selector: 'app-dashboard-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, CommonModule],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, CommonModule, ThemeToggleComponent],
   template: `
     <div class="dashboard-shell" [class.dashboard-shell--instructor]="isInstructor" [class.dashboard-shell--student]="isStudent" [class.dashboard-shell--admin]="isAdmin">
       <header class="topbar glass-card">
         <button class="chip" type="button" (click)="sidebarCollapsed = !sidebarCollapsed">Menu</button>
         <div class="topbar-actions">
+          <app-theme-toggle></app-theme-toggle>
            <!-- Notification Bell -->
           <div class="notif-wrapper" style="position: relative; margin-right: 0.5rem;">
-            <button class="chip notif-chip" (click)="toggleNotifs($event)" style="border:none; background: rgba(255,255,255,0.05); color: inherit;">
-              <span style="font-size: 1.1rem;">🔔</span>
+            <a
+              class="chip notif-chip"
+              [routerLink]="notificationsPath"
+              aria-label="Notifications"
+              title="Notifications"
+              style="border:none; background: rgba(255,255,255,0.05); color: inherit; cursor: pointer; z-index: 100; text-decoration:none;"
+            >
+              <span aria-hidden="true" style="font-size: 1.1rem; line-height: 1;">&#128276;</span>
               @if (unreadCount() > 0) {
                 <span class="notif-badge">{{ unreadCount() }}</span>
               }
-            </button>
+            </a>
 
             <!-- Notif Dropdown -->
             @if (showNotifs()) {
               <div class="notif-dropdown glass-card animate-in">
                 <div class="notif-header">
                   <h4 style="margin:0; font-size: 1rem;">Notifications</h4>
-                  <button (click)="markAllRead()" class="mark-all-btn">Mark all read</button>
+                  <div style="display:flex;align-items:center;gap:0.7rem;">
+                    <a [routerLink]="notificationsPath" (click)="showNotifs.set(false)" class="mark-all-btn">View all</a>
+                    <button (click)="markAllRead()" class="mark-all-btn">Mark all read</button>
+                  </div>
                 </div>
                 <div class="notif-list custom-scrollbar">
+                  @if (notifError()) {
+                    <div class="notif-empty">
+                      <p>{{ notifError() }}</p>
+                    </div>
+                  }
                   @for (n of notifications(); track n.notificationId) {
-                    <div class="notif-item" [class.unread]="!n.isRead" (click)="markRead(n)">
+                    <div class="notif-item" [class.unread]="!n.read" (click)="markRead(n)">
                       <div class="notif-indicator"></div>
                       <div class="notif-content">
-                        <div class="notif-title">{{ n.title }}</div>
+                        <div class="notif-title">{{ n.title ?? n.type ?? 'Notification' }}</div>
                         <div class="notif-msg">{{ n.message }}</div>
                         <div class="notif-time">{{ n.createdAt | date:'shortTime' }}</div>
                       </div>
                     </div>
                   }
-                  @if (notifications().length === 0) {
+                  @if (!notifError() && notifications().length === 0) {
                     <div class="notif-empty">
-                      <p>All caught up! ✨</p>
+                      <p>All caught up.</p>
                     </div>
                   }
                 </div>
@@ -87,10 +103,10 @@ import { CommonModule } from '@angular/common';
     </div>
   `,
   styles: `
-    .notif-chip { cursor: pointer; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; transition: all 0.3s; border: 1px solid rgba(148,163,184,0.35); background: #f8fafc; color: #111827; }
+    .notif-chip { cursor: pointer; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; transition: all 0.3s; border: 1px solid rgba(148,163,184,0.35); background: #f8fafc; color: #111827; z-index: 100; position: relative; overflow: visible; }
     .notif-chip:hover { background: #e2e8f0 !important; transform: translateY(-2px); }
-    .notif-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: bold; border: 2px solid #f8fafc; }
-    .notif-dropdown { position: absolute; top: calc(100% + 12px); right: 0; width: 320px; max-height: 440px; z-index: 9999; padding: 0; overflow: hidden; border: 1px solid rgba(226,232,240,0.95); box-shadow: 0 20px 40px rgba(15,23,42,0.12); border-radius: 20px; background: #ffffff; backdrop-filter: blur(20px); }
+    .notif-badge { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; border-radius: 50%; padding: 0.1rem 0.4rem; font-size: 0.65rem; font-weight: bold; border: 2px solid #f8fafc; }
+    .notif-dropdown { position: fixed; top: 70px; right: 20px; width: 320px; max-height: 440px; z-index: 9999; padding: 0; overflow: hidden; border: 1px solid rgba(226,232,240,0.95); box-shadow: 0 20px 40px rgba(15,23,42,0.12); border-radius: 20px; background: #ffffff; backdrop-filter: blur(20px); }
     .notif-header { padding: 1.2rem 1rem; border-bottom: 1px solid rgba(226,232,240,0.95); display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
     .mark-all-btn { background: transparent; border: none; color: var(--accent); cursor: pointer; font-size: 0.8rem; font-weight: 500; }
     .mark-all-btn:hover { text-decoration: underline; }
@@ -125,6 +141,7 @@ export class DashboardShellComponent implements OnInit, OnDestroy {
   protected showNotifs = signal(false);
   protected unreadCount = signal(0);
   protected notifications = signal<any[]>([]);
+  protected notifError = signal('');
 
   protected isStudent = false;
   protected isInstructor = false;
@@ -132,6 +149,7 @@ export class DashboardShellComponent implements OnInit, OnDestroy {
   protected title = 'Dashboard';
   protected navItems: NavItem[] = instructorNavItems;
   protected profilePath = '/student/profile';
+  protected notificationsPath = '/student/notifications';
   protected initials = signal('U');
   protected userName = signal('');
 
@@ -142,9 +160,17 @@ export class DashboardShellComponent implements OnInit, OnDestroy {
     this.navSub = this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe(updateShell);
+    effect(() => {
+      const user = this.auth.user();
+      this.updateFromAuth();
+      if (user?.userId) {
+        this.refreshNotifs(user.userId);
+      }
+    });
   }
 
   ngOnInit() {
+    this.auth.refreshCurrentUser();
     this.refreshNotifs();
     // Poll for notifications every 20 seconds for a "live" feel
     this.pollSub = setInterval(() => this.refreshNotifs(), 20000);
@@ -163,27 +189,32 @@ export class DashboardShellComponent implements OnInit, OnDestroy {
     }
   }
 
-  private refreshNotifs() {
-    const uid = this.auth.userId();
+  private refreshNotifs(userId?: number) {
+    const uid = userId ?? this.auth.userId();
     if (!uid) return;
 
     this.api.getUnreadCount(uid).subscribe({
-      next: (count) => this.unreadCount.set(count),
-      error: () => {} // Silent fail to not break UI
+      next: (count) => {
+        this.unreadCount.set(Number(count) || 0);
+        this.notifError.set('');
+      },
+      error: () => this.notifError.set('Unable to load notifications.')
     });
     
     this.api.getNotifications(uid).subscribe({
       next: (res) => {
-        const data = Array.isArray(res) ? res : (res?.data ?? []);
+        const data = Array.isArray(res) ? res : [];
         this.notifications.set(data.slice(0, 10)); // Top 10 for performance
+        this.notifError.set('');
       },
-      error: () => {}
+      error: () => this.notifError.set('Unable to load notifications.')
     });
   }
 
   protected markRead(n: any) {
-    if (n.isRead) return;
-    this.api.markNotificationRead(n.notificationId).subscribe(() => this.refreshNotifs());
+    const notificationId = n.notificationId ?? n.id;
+    if (n.read || !notificationId) return;
+    this.api.markNotificationRead(notificationId).subscribe(() => this.refreshNotifs());
   }
 
   protected markAllRead() {
@@ -210,14 +241,17 @@ export class DashboardShellComponent implements OnInit, OnDestroy {
       this.title = 'Student';
       this.navItems = studentNavItems;
       this.profilePath = '/student/profile';
+      this.notificationsPath = '/student/notifications';
     } else if (this.isInstructor) {
       this.title = 'Instructor';
       this.navItems = instructorNavItems;
       this.profilePath = '/instructor/profile';
+      this.notificationsPath = '/instructor/notifications';
     } else if (this.isAdmin) {
       this.title = 'Admin';
       this.navItems = adminNavItems;
       this.profilePath = '/admin';
+      this.notificationsPath = '/admin/notifications';
     }
   }
 

@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, effect, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ApiService } from '../services/api.service';
 import { AuthService } from '../services/auth.service';
@@ -20,6 +20,8 @@ import { AuthService } from '../services/auth.service';
       <div style="display:grid;gap:0.7rem;margin-top:1rem;">
         @if (loading()) {
           <p class="page-copy">Loading...</p>
+        } @else if (error()) {
+          <p class="page-copy">{{ error() }}</p>
         } @else if (notifications().length === 0) {
           <p class="page-copy">No notifications yet.</p>
         } @else {
@@ -50,28 +52,51 @@ export class InstructorNotificationsComponent implements OnInit {
   protected notifications = signal<any[]>([]);
   protected loading = signal(true);
   protected unread = signal(0);
+  protected error = signal('');
 
-  constructor(private api: ApiService, private auth: AuthService) {}
+  constructor(private api: ApiService, private auth: AuthService) {
+    effect(() => {
+      const uid = this.auth.userId();
+      if (uid) {
+        this.load(uid);
+      }
+    });
+  }
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.auth.refreshCurrentUser();
+  }
 
-  private load() {
-    const uid = this.auth.userId();
-    if (!uid) { this.loading.set(false); return; }
+  private load(uid: number) {
+    this.loading.set(true);
     this.api.getNotifications(uid).subscribe({
       next: (data: any[]) => {
         this.notifications.set(data ?? []);
         this.unread.set((data ?? []).filter((n: any) => !n.read).length);
+        this.error.set('');
         this.loading.set(false);
       },
-      error: () => this.loading.set(false),
+      error: () => {
+        this.error.set('Unable to load notifications. Please check the notification service.');
+        this.loading.set(false);
+      },
     });
   }
 
-  protected markRead(item: any) { this.api.markNotificationRead(item.notificationId).subscribe({ next: () => this.load() }); }
+  protected markRead(item: any) {
+    const uid = this.auth.userId();
+    const notificationId = item.notificationId ?? item.id;
+    if (!notificationId) return;
+    this.api.markNotificationRead(notificationId).subscribe({ next: () => uid && this.load(uid) });
+  }
   protected markAllRead() {
     const uid = this.auth.userId();
-    if (uid) this.api.markAllNotificationsRead(uid).subscribe({ next: () => this.load() });
+    if (uid) this.api.markAllNotificationsRead(uid).subscribe({ next: () => this.load(uid) });
   }
-  protected deleteNotif(item: any) { this.api.deleteNotification(item.notificationId).subscribe({ next: () => this.load() }); }
+  protected deleteNotif(item: any) {
+    const uid = this.auth.userId();
+    const notificationId = item.notificationId ?? item.id;
+    if (!notificationId) return;
+    this.api.deleteNotification(notificationId).subscribe({ next: () => uid && this.load(uid) });
+  }
 }

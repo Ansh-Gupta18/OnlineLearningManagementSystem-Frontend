@@ -68,7 +68,7 @@ import { ApiService } from '../services/api.service';
                 <a [routerLink]="['/course', course.courseId]" class="el-card explore-card">
                   <div
                     class="course-visual"
-                    [style.background-image]="course.thumbnailUrl ? 'url(' + course.thumbnailUrl + ')' : null"
+                    [style.background-image]="safeBackgroundImage(course.thumbnailUrl)"
                   ></div>
                   <div class="course-body">
                     <div class="course-meta-top">
@@ -177,5 +177,14 @@ export class StudentExploreComponent implements OnInit, OnDestroy {
       },
       error: () => { this.loading.set(false); },
     });
+  }
+
+  protected safeBackgroundImage(url: unknown): string | null {
+    if (typeof url !== 'string') return null;
+    const trimmed = url.trim();
+    if (!trimmed || trimmed.startsWith('file:') || trimmed.toLowerCase().endsWith('.htm') || trimmed.toLowerCase().endsWith('.html')) {
+      return null;
+    }
+    return `url("${trimmed.replace(/"/g, '%22')}")`;
   }
 }
